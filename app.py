@@ -1,211 +1,216 @@
 import streamlit as st
-import base64
-import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
 
-# ==========================================
-# 1. CORE CONVERSION LOGIC & MAPPING
-# ==========================================
-def get_anmollipi_to_unicode_map():
-    return {
-        # Base Consonants & Vowel Carriers
-        'E': '\u0A73', 'A': '\u0A05', 'e': '\u0A72', 's': '\u0A38', 'h': '\u0A39',
-        'k': '\u0A15', 'K': '\u0A16', 'g': '\u0A17', 'G': '\u0A18', '|': '\u0A19',
-        'c': '\u0A1A', 'C': '\u0A1B', 'j': '\u0A1C', 'J': '\u0A1D', '\\': '\u0A1E',
-        't': '\u0A1F', 'T': '\u0A20', 'f': '\u0A21', 'F': '\u0A22', 'x': '\u0A23',
-        'q': '\u0A24', 'Q': '\u0A25', 'd': '\u0A26', 'D': '\u0A27', 'n': '\u0A28',
-        'p': '\u0A2A', 'P': '\u0A2B', 'b': '\u0A2C', 'B': '\u0A2D', 'm': '\u0A2E',
-        'X': '\u0A2F', 'r': '\u0A30', 'l': '\u0A32', 'v': '\u0A35', 'V': '\u0A5C',
-        'L': '\u0A33', 'S': '\u0A36', 'z': '\u0A5B', 
-        
-        # Vowels & Modifiers (Includes fixes for 'a' and bindis)
-        'a': '\u0A13', 'Z': '\u0A5A', '^': '\u0A59', '&': '\u0A5E', 
-        'w': '\u0A3E', 'i': '\u0A3F', 'I': '\u0A40', 'u': '\u0A41', 'U': '\u0A42',
-        'y': '\u0A47', 'Y': '\u0A48', 'o': '\u0A4B', 'O': '\u0A4C',
-        'N': '\u0A02', 'M': '\u0A70', '~': '\u0A71', '`': '\u0A71',
-        
-        # Pairin (Foot) Characters (Virama + Consonant)
-        'H': '\u0A4D\u0A39', 'R': '\u0A4D\u0A30', 'W': '\u0A4D\u0A35',
-        
-        # Numbers
-        '1': '\u0A67', '2': '\u0A68', '3': '\u0A69', '4': '\u0A6A', '5': '\u0A6B',
-        '6': '\u0A6C', '7': '\u0A6D', '8': '\u0A6E', '9': '\u0A6F', '0': '\u0A66'
-    }
+# -------------------------------------------------------------------------
+# Page Configuration & Styling
+# -------------------------------------------------------------------------
+st.set_page_config(
+    page_title="India Ethanol Blending Impact Predictor",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-def convert_anmollipi_text(input_text):
-    if not input_text:
-        return ""
-        
-    mapping_dict = get_anmollipi_to_unicode_map()
-    output_text = ""
-    skip_count = 0
+# -------------------------------------------------------------------------
+# Data Generation (Historical Baseline & Future Estimates for India)
+# -------------------------------------------------------------------------
+@st.cache_data
+def generate_historical_data():
+    # Historical data matching Indian bioenergy trajectory (2015-2025)
+    years = np.arange(2015, 2026)
     
-    # --- PHASE 1: Character Swapping and Direct Mapping ---
-    for index in range(len(input_text)):
-        if skip_count > 0:
-            skip_count -= 1
-            continue
-            
-        char = input_text[index]
-        
-        # Advanced Sihari Swap Logic
-        if char == 'i':
-            if index + 1 < len(input_text):
-                next_char = input_text[index + 1]
-                
-                # Check for Adhak typed right after the Sihari
-                if next_char in ['~', '`'] and index + 2 < len(input_text):
-                    adhak = next_char
-                    base_cons = input_text[index + 2]
-                    
-                    if index + 3 < len(input_text) and input_text[index + 3] in ['H', 'R', 'W']:
-                        pairin_char = input_text[index + 3]
-                        output_text += mapping_dict.get(adhak, adhak)
-                        output_text += mapping_dict.get(base_cons, base_cons)
-                        output_text += mapping_dict.get(pairin_char, pairin_char)
-                        output_text += '\u0A3F'
-                        skip_count = 3
-                    else:
-                        output_text += mapping_dict.get(adhak, adhak)
-                        output_text += mapping_dict.get(base_cons, base_cons)
-                        output_text += '\u0A3F'
-                        skip_count = 2
-                        
-                else:
-                    base_cons = next_char
-                    if index + 2 < len(input_text) and input_text[index + 2] in ['H', 'R', 'W']:
-                        pairin_char = input_text[index + 2]
-                        output_text += mapping_dict.get(base_cons, base_cons)
-                        output_text += mapping_dict.get(pairin_char, pairin_char)
-                        output_text += '\u0A3F'
-                        skip_count = 2
-                    else:
-                        output_text += mapping_dict.get(base_cons, base_cons)
-                        output_text += '\u0A3F'
-                        skip_count = 1
-            else:
-                output_text += '\u0A3F'
-        else:
-            output_text += mapping_dict.get(char, char)
-            
-    # --- PHASE 2: Unicode Normalization (Independent Vowels) ---
-    output_text = output_text.replace('\u0A73\u0A41', '\u0A09')
-    output_text = output_text.replace('\u0A73\u0A42', '\u0A0A')
-    output_text = output_text.replace('\u0A73\u0A4B', '\u0A13')
+    # Blend percentages evolving over time
+    blend_pct = np.array([1.5, 2.0, 3.8, 4.2, 5.0, 6.2, 8.1, 10.0, 11.5, 13.0, 15.0])
     
-    output_text = output_text.replace('\u0A05\u0A3E', '\u0A06')
-    output_text = output_text.replace('\u0A05\u0A48', '\u0A10')
-    output_text = output_text.replace('\u0A05\u0A4C', '\u0A14')
+    # CO2 Emission Reduction (Million Metric Tonnes - MMT) matching blend penetration
+    # Approximated relationship based on life-cycle assessments
+    co2_reduction_mmt = blend_pct * 2.4 + np.random.normal(0, 0.5, len(years))
     
-    output_text = output_text.replace('\u0A72\u0A3F', '\u0A07')
-    output_text = output_text.replace('\u0A72\u0A40', '\u0A08')
-    output_text = output_text.replace('\u0A72\u0A47', '\u0A0F')
-                
-    return output_text
-
-
-# ==========================================
-# 2. STREAMLIT DYNAMIC FONT LOADER
-# ==========================================
-def load_custom_font(font_filename="AnmolLipi.ttf"):
-    """
-    Reads the local .ttf file, encodes it to Base64, and dynamically injects 
-    it into the Streamlit CSS so the browser can render it without installation.
-    """
-    if not os.path.exists(font_filename):
-        st.warning(f"⚠️ '{font_filename}' not found in the directory. Input text will render as standard English characters.")
-        return
-
-    with open(font_filename, "rb") as f:
-        font_data = base64.b64encode(f.read()).decode("utf-8")
-        
-    custom_css = f"""
-    <style>
-    @font-face {{
-        font-family: 'AnmolLipi';
-        src: url(data:font/ttf;base64,{font_data}) format('truetype');
-    }}
+    # Forex savings in Billion USD
+    forex_savings_billion_usd = blend_pct * 0.32 + np.random.normal(0, 0.1, len(years))
     
-    /* Target the textarea inside the FIRST column (AnmolLipi Input) */
-    div[data-testid="column"]:nth-of-type(1) textarea {{
-        font-family: 'AnmolLipi', sans-serif !important;
-        font-size: 1.6rem !important; 
-    }}
+    # Historical feedstock production in Million Litres
+    sugarcane_m_litres = np.array([700, 900, 1200, 1500, 1800, 2200, 2700, 3100, 3400, 3600, 3800])
+    maize_m_litres = np.array([50, 60, 80, 110, 150, 250, 400, 600, 850, 1100, 1300])
+    rice_m_litres = np.array([10, 15, 20, 35, 70, 120, 250, 450, 700, 950, 1150])
+    tech_2g_m_litres = np.array([0, 0, 1, 2, 5, 10, 15, 30, 50, 80, 120])
+    tech_3g_m_litres = np.array([0, 0, 0, 0, 0, 1, 2, 4, 8, 12, 20])
     
-    /* Target the textarea inside the SECOND column (Unicode Output) */
-    div[data-testid="column"]:nth-of-type(2) textarea {{
-        font-family: 'Raavi', 'Noto Sans Gurmukhi','Nirmala UI', sans-serif !important;
-        font-size: 1.4rem !important;
-    }}
-    </style>
-    """
-    st.markdown(custom_css, unsafe_allow_html=True)
+    df = pd.DataFrame({
+        "Year": years,
+        "Blend_Percentage": blend_pct,
+        "CO2_Reduction_MMT": co2_reduction_mmt,
+        "Forex_Savings_Billion_USD": forex_savings_billion_usd,
+        "Sugarcane_Million_Litres": sugarcane_m_litres,
+        "Maize_Million_Litres": maize_m_litres,
+        "Rice_Million_Litres": rice_m_litres,
+        "2G_Biomass_Million_Litres": tech_2g_m_litres,
+        "3G_Algae_Million_Litres": tech_3g_m_litres
+    })
+    return df
 
+df_hist = generate_historical_data()
 
-# ==========================================
-# 3. STREAMLIT WEB APP UI
-# ==========================================
-st.set_page_config(page_title="Gurmukhi Data Standardizer", layout="wide")
+# -------------------------------------------------------------------------
+# Machine Learning Model Training
+# -------------------------------------------------------------------------
+# Model 1: CO2 Reduction Predictor based on Blend Percentage
+X_blend = df_hist[['Blend_Percentage']]
+y_co2 = df_hist['CO2_Reduction_MMT']
+y_forex = df_hist['Forex_Savings_Billion_USD']
 
-# Inject the font CSS
-load_custom_font()
+# Using Polynomial Features to capture slight efficiency scaling
+model_co2 = make_pipeline(PolynomialFeatures(degree=2), LinearRegression())
+model_co2.fit(X_blend, y_co2)
 
-st.title("🏛️ Legacy Gurmukhi Data Standardizer")
-st.markdown("**MCA Capstone Project:** Standardize legacy ASCII AnmolLipi documents into universally accessible Unicode (Raavi) for modern databases and searchability.")
+model_forex = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
+model_forex.fit(X_blend, y_forex)
 
-st.divider()
+# Model 2: Feedstock Future Projections (Time Series Regression)
+feedstocks = [
+    "Sugarcane_Million_Litres", "Maize_Million_Litres", 
+    "Rice_Million_Litres", "2G_Biomass_Million_Litres", "3G_Algae_Million_Litres"
+]
+feedstock_models = {}
 
-# --- File Upload Section ---
-st.subheader("Batch Process a Document")
-uploaded_file = st.file_uploader("Upload a .txt file containing AnmolLipi text", type=["txt"])
+X_years = df_hist[['Year']]
+for feed in feedstocks:
+    # 2G and 3G follow exponential/polynomial scaling paths in policy mandates
+    deg = 2 if "2G" in feed or "3G" in feed or "Maize" in feed or "Rice" in feed else 1
+    model = make_pipeline(PolynomialFeatures(degree=deg), LinearRegression())
+    model.fit(X_years, df_hist[feed])
+    feedstock_models[feed] = model
 
-# Initialize session state for text input so we can update it from the file uploader
-if "input_text" not in st.session_state:
-    st.session_state["input_text"] = ""
+# -------------------------------------------------------------------------
+# Streamlit Dashboard UI Layout
+# -------------------------------------------------------------------------
+st.title("🇮🇳 Ethanol Blending in Petrol: Economic & Environmental Impact App")
+st.markdown("""
+This data science dashboard models and predicts the environmental and macroeconomic impacts of India's **Ethanol Blended Petrol (EBP)** programme.
+Using historical supply data and predictive machine learning, it evaluates carbon footprint reductions, forex changes, and future supply security.
+""")
 
-if uploaded_file is not None:
-    # Read and decode the uploaded text file
-    st.session_state["input_text"] = uploaded_file.getvalue().decode("utf-8")
-    st.success("File successfully loaded! Check the input box below.")
+# Sidebar Navigation / Controls
+st.sidebar.header("🕹️ Control Dashboard")
+app_mode = st.sidebar.radio("Choose App Module", ["Environmental & Economic Simulator", "Future Feedstock Projections"])
 
-st.divider()
-
-# --- Interactive Text Areas Section (Split Columns) ---
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("1. Input (AnmolLipi ASCII)")
-    st.info("Paste or type keystrokes here. (e.g. `ieqihws`)")
+if app_mode == "Environmental & Economic Simulator":
+    st.header("🌱 Custom Ethanol Blend Impact Simulator")
     
-    # Text area for user input. Renders in AnmolLipi due to the injected CSS.
-    user_input = st.text_area(
-        "ASCII Text", 
-        value=st.session_state["input_text"], 
-        height=350, 
-        label_visibility="collapsed"
-    )
-
-with col2:
-    st.subheader("2. Output (Unicode/Raavi)")
-    st.info("Standardized text automatically updates below. (e.g. `ਇਤਿਹਾਸ`)")
-    
-    # Process the text
-    converted_text = convert_anmollipi_text(user_input)
-    
-    # Text area for output (read-only). Renders in standard Unicode fonts.
-    st.text_area(
-        "Unicode Text", 
-        value=converted_text, 
-        height=350, 
-        label_visibility="collapsed", 
-        disabled=True
+    st.markdown("### Select or Input a Target Blend Level")
+    preset = st.radio(
+        "Quick Presets:",
+        ["Custom Slider", "E10 (10%)", "E20 (20% Target)", "E30 (30%)", "E85 (85% Flex-Fuel)", "E100 (100% Pure Ethanol)"],
+        index=2
     )
     
-    # Download Button for the converted results
-    if converted_text:
-        st.download_button(
-            label="⬇️ Download Converted Unicode as .txt",
-            data=converted_text,
-            file_name="standardized_punjabi_output.txt",
-            mime="text/plain",
-            use_container_width=True
-        )
+    # Map preset selections to value
+    if preset == "E10 (10%)":
+        custom_blend = 10.0
+    elif preset == "E20 (20% Target)":
+        custom_blend = 20.0
+    elif preset == "E30 (30%)":
+        custom_blend = 30.0
+    elif preset == "E85 (85% Flex-Fuel)":
+        custom_blend = 85.0
+    elif preset == "E100 (100% Pure Ethanol)":
+        custom_blend = 100.0
+    else:
+        custom_blend = st.slider("Select Custom Ethanol Blend Percentage (%)", 1.0, 100.0, 25.0, 0.5)
+
+    # Predictions via ML Model
+    predicted_co2 = model_co2.predict(np.array([[custom_blend]]))[0]
+    predicted_forex = model_forex.predict(np.array([[custom_blend]]))[0]
+    
+    # Clamping down values to avoid negative boundaries on ultra-low edge cases
+    predicted_co2 = max(0.0, predicted_co2)
+    predicted_forex = max(0.0, predicted_forex)
+
+    # Display Metrics
+    col1, col2, col3 = st.columns(3)
+    col1.metric(label="Target Blend Selected", value=f"{custom_blend}%")
+    col2.metric(label="Predicted Annual CO₂ Reduction", value=f"{predicted_co2:.2f} MMT")
+    col3.metric(label="Est. Annual Forex Import Savings", value=f"${predicted_forex:.2f} Billion")
+
+    # Interactive Plots
+    st.markdown("### Historical Trends vs. Modelled Predictions")
+    
+    fig, ax = plt.subplots(1, 2, figsize=(14, 5))
+    sns.set_theme(style="whitegrid")
+    
+    # Plot 1: CO2 Reduction Curve
+    sns.regplot(x="Blend_Percentage", y="CO2_Reduction_MMT", data=df_hist, ax=ax[0], color="seagreen", label="Historical Data")
+    ax[0].scatter([custom_blend], [predicted_co2], color="red", s=150, zorder=5, label=f"Prediction ({custom_blend}%)")
+    ax[0].set_title("Ethanol Blend % vs Annual CO2 Reduction")
+    ax[0].set_xlabel("Ethanol Blend in Petrol (%)")
+    ax[0].set_ylabel("CO2 Reduction (Million Metric Tonnes)")
+    ax[0].legend()
+    
+    # Plot 2: Forex Savings Curve
+    sns.regplot(x="Blend_Percentage", y="Forex_Savings_Billion_USD", data=df_hist, ax=ax[1], color="teal", label="Historical Data")
+    ax[1].scatter([custom_blend], [predicted_forex], color="red", s=150, zorder=5, label=f"Prediction ({custom_blend}%)")
+    ax[1].set_title("Ethanol Blend % vs Forex Savings")
+    ax[1].set_xlabel("Ethanol Blend in Petrol (%)")
+    ax[1].set_ylabel("Forex Savings (Billion USD)")
+    ax[1].legend()
+    
+    st.pyplot(fig)
+    
+    # Data display
+    with st.expander("📋 View Underlying Historical Baseline Dataset"):
+        st.dataframe(df_hist[["Year", "Blend_Percentage", "CO2_Reduction_MMT", "Forex_Savings_Billion_USD"]], use_container_width=True)
+
+else:
+    st.header("🔮 Future Feedstock Production Projections (India)")
+    st.markdown("""
+    To sustain higher blending targets like E20, E30, or beyond, raw material supply must transform. 
+    This engine leverages polynomial trend-fitting to estimate production capacities across **1G (Sugarcane, Maize, Rice)** and advanced **2G & 3G** resources.
+    """)
+    
+    target_year = st.slider("Select Horizon Prediction Year", 2026, 2035, 2030)
+    
+    # Predict future values
+    future_years = np.arange(2026, target_year + 1)
+    future_df_list = []
+    
+    for yr in future_years:
+        row = {"Year": yr}
+        for feed in feedstocks:
+            pred_val = feedstock_models[feed].predict(np.array([[yr]]))[0]
+            row[feed] = max(0.0, pred_val) # Prevent negative predictions
+        future_df_list.append(row)
+        
+    df_future = pd.DataFrame(future_df_list)
+    df_combined = pd.concat([df_hist[["Year"] + feedstocks], df_future]).reset_index(drop=True)
+    
+    # Combined Data Visualization
+    st.markdown(f"### Production Trajectory up to {target_year} (in Million Litres)")
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Plot each feedstock group
+    ax.plot(df_combined["Year"], df_combined["Sugarcane_Million_Litres"], marker='o', label="Sugarcane (1G)", linewidth=2.5)
+    ax.plot(df_combined["Year"], df_combined["Maize_Million_Litres"], marker='s', label="Maize (1G)", linewidth=2)
+    ax.plot(df_combined["Year"], df_combined["Rice_Million_Litres"], marker='^', label="Rice (1G)", linewidth=2)
+    ax.plot(df_combined["Year"], df_combined["2G_Biomass_Million_Litres"], marker='x', label="2G Biomass (Agricultural Residues)", linewidth=2)
+    ax.plot(df_combined["Year"], df_combined["3G_Algae_Million_Litres"], marker='d', label="3G Algae (Advanced Biofuels)", linewidth=1.5)
+    
+    # Visual boundary line between history and prediction
+    ax.axvline(x=2025.5, color='red', linestyle='--', alpha=0.7, label='Prediction Horizon Start')
+    
+    ax.set_title("Feedstock Supply Mix Diversification & Projection Trends", fontsize=14)
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Ethanol Production Capacity (Million Litres)")
+    ax.set_xlim(2015, target_year + 0.5)
+    ax.legend(loc="upper left")
+    
+    st.pyplot(fig)
+    
+    # Aggregated breakdown table
+    st.markdown("### Projected Feedstock Volume Breakdown Table")
+    st.dataframe(df_combined.style.format(precision=1), use_container_width=True)

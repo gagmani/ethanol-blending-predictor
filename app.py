@@ -94,7 +94,7 @@ ml_algorithm = st.sidebar.selectbox(
     index=1
 )
 
-if app_mode == "Environmental & Economic Predictor":
+if app_mode == "Environmental & Economic Impact Predictor":
     st.header("🌱 Custom Ethanol Blend Impact Predictor")
     
     # Train Models dynamically based on user selection

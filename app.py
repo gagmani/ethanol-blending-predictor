@@ -78,7 +78,7 @@ This data science dashboard models and predicts the environmental and macroecono
 
 # Sidebar Navigation / Controls
 st.sidebar.header("🕹️ Control Dashboard")
-app_mode = st.sidebar.radio("Choose App Module", ["Environmental & Economic Simulator", "Future Feedstock Projections"])
+app_mode = st.sidebar.radio("Choose App Module", ["Environmental & Economic Impact Predictor", "Future Feedstock Projections"])
 
 st.sidebar.header("⚙️ Machine Learning Settings")
 ml_algorithm = st.sidebar.selectbox(
@@ -94,8 +94,8 @@ ml_algorithm = st.sidebar.selectbox(
     index=1
 )
 
-if app_mode == "Environmental & Economic Simulator":
-    st.header("🌱 Custom Ethanol Blend Impact Simulator")
+if app_mode == "Environmental & Economic Predictor":
+    st.header("🌱 Custom Ethanol Blend Impact Predictor")
     
     # Train Models dynamically based on user selection
     X_blend = df_hist[['Blend_Percentage']]
